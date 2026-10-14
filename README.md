@@ -1,119 +1,124 @@
-# Automatização para envio de mensagens/arquivos
-Repositório dedicado a criação de uma automatização para enviar arquivos/mensagens utilizando a linguagem de programação python.
+# Automatização e Rastreabilidade de Envio de Mensagens (WhatsApp)
 
-## Funcionalidades principais
-- Permite enviar mensagens para uma lista de contatos
-- Possibilita o envio de erquivos para uma lista de contatos
+Sistema corporativo para captação/sincronização de leads a partir do Google Sheets, catálogo de mensagens com suporte a anexos e múltiplos templates sequenciais, fila persistente no SQL Server, conformidade com a LGPD e canal de envio desacoplado (com modo de simulação `dry-run` por padrão e suporte a WhatsApp Desktop e API Oficial).
 
-## Requisitos
-O biblioteca utilizado no desenvolvimento deste projeto, utiliza comandos de teclado no padrão do Windows. Os testes foram realizados com a aplicação do WhatsApp Desktop sendo fixada na primeira posição da barra de tarefas do Windows.
-Também é necessário realizar a instalação do SQL Server para coletar os dados dos contatos e a linguagem Python em sua maquina.
+---
 
-- Link para download do Python: [Python](https://www.python.org/downloads/)
-- Link para download do SQL: [SQL Server Download](https://www.microsoft.com/pt-br/sql-server/sql-server-downloads)
-- Link para download do SSMS: [SQL Server Management Studio (SSMS)](https://aka.ms/ssmsfullsetup)
+## 🚀 Arquitetura Geral
 
-## Instalação
-Para realizar a instalação, siga estas etapas:
-1. Clone o repositório do GitHub:
-```bash
-git clone https://github.com/Wiryco/automatizacaoMsg.git
-```
-2. Navegue até o diretório do projeto:
-```bash
-cd automatizacaoMsg
-```
-3. Instale as dependências usando pip:
-```python
-pip install -r requirements.txt
-```
-4. Instale o banco de dados SQL Server.
-5. Navegue até o diretório onde está localizado o script modelo SQL:
-```bash
-cd sql
-```
-7. Execute o script dentro do SQL:
-```sql
-sqlmodel.sql
-```
-8. Execute o codigo principal python:
-```python
-python sendinfos.py
-```
+- **Fonte da Verdade Persistente**: SQL Server (banco `AUTOMATIZACAO`, schema `automatizacao`).
+- **Interface Operacional e Catálogo**: Google Sheets via API oficial (contas de serviço do Google Cloud, sem automação de navegador).
+- **Canal de Envio Desacoplado**:
+  - `DryRunWhatsAppChannel`: simulação segura padrão (sem automação de interface e sem envio real acidental).
+  - `DesktopWhatsAppChannel`: automação desktop legada via PyAutoGUI, pynput e URI scheme `whatsapp://send`.
+  - `WhatsAppBusinessApiChannel`: estrutura extensível para a API Oficial do WhatsApp Business.
+- **Rastreabilidade e LGPD**:
+  - Auditoria completa por etapa de envio na tabela `HISTORICO_TENTATIVAS_ENVIO_WPP`.
+  - Controle explícito de consentimento (`OPT_IN`), revogação e bloqueio (`OPT_OUT`).
+  - Mascaramento rigoroso de telefones e dados sensíveis em logs e consoles.
+  - Prevenção contra Directory Traversal em arquivos de anexo.
+- **Idempotência e Concorrência**:
+  - Cada etapa possui chave de idempotência única: `{ID_CONTROLE}:{ORDEM}:{CODIGO_MENSAGEM}`.
+  - Orquestrador com Single-Instance Process Lock no Windows contra execuções simultâneas.
+  - Recuperação segura de etapas abandonadas em `PROCESSANDO` após timeout, sem reenvio cego.
 
-## Estrutura do projeto
-```
-projeto/
-└── img/
-    ├── botao_arquivo_desktop.png
-    ├── botao_documento_desktop.png
-    ├── botao_imagem_desktop.png
-    ├── botao_imagem_web.png
-    ├── botao_mensagem_desktop.png
-    └── botao_pesquisa_desktop.png
-└── sql/
-    ├── sqlmodel.sql/
-└── functions.py
-└── scripts.py
-└── sendinfos.py
-└── .env
-```
+---
 
-## Configuração do arquivo .env
-O arquivo `.env` é usado para armazenar variáveis de ambiente que o seu projeto python precisa para funcionar corretamente.
-Aqui está a estrutura básica do arquivo `.env` para este projeto:
+## 📋 Abas da Planilha (Google Sheets)
+
+1. **`Mensagem`** (Catálogo de templates):
+   - `Mensagem`: texto do template, suportando `{{nome}}` e `{{nome_completo}}`.
+   - `Arquivo`: nome ou caminho do anexo (resolvido exclusivamente dentro de `ANEXOS_BASE_DIR`).
+   - `Codigo_Mensagem`: identificador textual único, estável e sem vírgulas (ex: `boas-vindas`, `apresentacao`).
+   - `Ativo`: `1` para disponível, `0` para bloqueado.
+
+2. **`Controle`** (Fila operacional de solicitações):
+   - `ID_CONTROLE`: identificador técnico gerado automaticamente pelo sistema (ex: `CTRL-uuid`).
+   - `Data`: data da solicitação.
+   - `Nome`: nome do contato/lead.
+   - `Contato`: telefone brasileiro (formatado ou somente dígitos).
+   - `Mensagem`: um ou mais códigos de mensagem separados por vírgula (a ordem é estritamente preservada).
+   - `Envio`: preenchido pelo operador (`Pendente` ou `Cancelado`) e atualizado pelo sistema (`Processando`, `Enviado`, `Erro`).
+   - `Ultima Mensagem Enviada`: preenchida pelo sistema após envio de cada etapa.
+   - `Ultima Mensagem Recebida`: preservada e nunca preenchida sem fonte confiável.
+   - `Último contato`: data/hora de controle operacional.
+
+3. **`Listas`**:
+   - Fonte para validação de dados (dropdowns e regras da planilha).
+
+---
+
+## 🛠️ Configuração do Ambiente (`.env`)
+
+Copie o `.env.example` para `.env` e configure:
 
 ```dotenv
-serverName = ''
-dataBase = ''
-userName = ''
-password = ''
-driveConnection = ''
-schema = ''
+# SQL Server
+serverName=localhost,1433
+dataBase=AUTOMATIZACAO
+userName=usuario_sql
+password=senha_sql
+driveConnection=ODBC Driver 17 for SQL Server
+schema=automatizacao
+
+# Google Sheets
+GOOGLE_SHEETS_SPREADSHEET_ID=identificador-da-planilha
+GOOGLE_SHEETS_SERVICE_ACCOUNT_FILE=C:\caminho-protegido\service-account.json
+GOOGLE_SHEETS_MENSAGENS_TAB=Mensagem
+GOOGLE_SHEETS_CONTROLE_TAB=Controle
+
+# Diretorio seguro para arquivos anexos
+ANEXOS_BASE_DIR=C:\Repositorios\automatizacaoMsg\anexos
+
+# Modo de simulacao e canal (por padrao true para seguranca)
+WHATSAPP_DRY_RUN=true
+WHATSAPP_CHANNEL=desktop
+REQUIRE_EXPLICIT_OPT_IN=true
 ```
 
-## Instalações pip manual
-```
-pip install SQLAlchemy
-pip install pyautogui
-pip install pynput
-pip install python-dotenv
-pip install pandas
-pip install pyodbc
-pip install --upgrade pillow
+---
+
+## 📦 Migrações do Banco de Dados
+
+Para aplicar as migrações não-destrutivas e idempotentes:
+
+```powershell
+python .\migrate.py
 ```
 
-## Exemplos
-Após a execução dos passos descritos anteriormente, é possível obter os dados dos clientes ao executar o seguinte comando no banco de dados:
-```sql
-SELECT C.*, A.ID_TIPO_ENVIO, B.DESCRICAO_TIPO_ENVIO, A.ID_MENSAGEM, A.CAMINHO_ARQUIVO, D.DESCRICAO_MENSAGEM
-FROM automatizacao.CONTROLE_ENVIO_WPP A
-JOIN automatizacao.TIPO_ENVIO_WPP B ON A.ID_TIPO_ENVIO = B.ID_TIPO_ENVIO
-JOIN automatizacao.CONTATOS_WPP C ON A.ID_CONTATO = C.ID_CONTATO
-JOIN automatizacao.MENSAGEM_WPP D ON A.ID_MENSAGEM = D.ID_MENSAGEM
-WHERE C.ATIVO = 1
-```
-Ele vai trazer as seguintes informações:
-```sql
-ID_CONTATO	NOME	    TELEFONE	ATIVO	ID_TIPO_ENVIO	DESCRICAO_TIPO_ENVIO	ID_MENSAGEM	CAMINHO_ARQUIVO	                  DESCRICAO_MENSAGEM
-2	        Nome Teste	99999999	1	    2	            DOCUMENTO	            0	        C:\testeSend\Teste RPA.txt	      NULL
-2	        Nome Teste	99999999	1	    2	            DOCUMENTO	            0	        C:\testeSend\Teste RPA.docx	      NULL
-2	        Nome Teste	99999999	1	    2	            DOCUMENTO	            0	        C:\testeSend\Teste RPA.pdf	      NULL
-2	        Nome Teste	99999999	1	    3	            IMAGEM	                1	        C:\testeSend\harrypotter_2.jpeg	  Olá, tudo bem? Esse é um teste do robo que envia mensagem para os contatos do WhatsApp
-```
-Esta tabela será lida pela função `consultaDadosCliente`, disponibilizada no arquivo `scripts.py`, que retorna um dataframe contendo todas as informações dos contatos e os repositórios onde o Python vai coletar os arquivos que serão enviados.
-O loop `for` percorre todas as posições do dataframe, coletando os dados dos clientes, os arquivos associados e enviando-os separadamente, um a um.
-O loop `for` descrito é o seguinte:
-```python
-for contato in dba.select(query=query.consultaDadosCliente()).itertuples():
-    contato_wpp = functions.contatoWpp(dadosContato=contato)
+O script aplica as evoluções sem `DROP` ou `TRUNCATE`, preservando histórico e identificadores.
 
-    contato_wpp.eventSelectUser()
+---
 
-    if contato.ID_TIPO_ENVIO == 1 and contato.DESCRICAO_MENSAGEM:
-        contato_wpp.eventSendMsg()
+## 🧪 Testes Automatizados
 
-    if (contato.ID_TIPO_ENVIO == 2 or contato.ID_TIPO_ENVIO == 3) and contato.CAMINHO_ARQUIVO:
-        contato_wpp.eventClickFile()
-        contato_wpp.eventSendFile()
+Para rodar a suíte completa de testes unitários com mocks:
+
+```powershell
+python -m unittest discover -s tests -v
 ```
+
+---
+
+## ⚙️ Execução
+
+### 1. Verificação da Planilha Google Sheets
+```powershell
+python .\check_google_sheets.py
+```
+
+### 2. Execução Única do Ciclo Completo (Sincronização + Worker)
+```powershell
+python .\scheduler.py --once
+```
+
+### 3. Execução Recorrente (A cada 15 minutos com Lock de Processo)
+```powershell
+python .\scheduler.py
+```
+
+### 4. Worker Legado Compatível
+```powershell
+python .\sendinfos.py
+```
+*(Executa em modo `dry-run` por padrão caso `WHATSAPP_DRY_RUN=true`)*.

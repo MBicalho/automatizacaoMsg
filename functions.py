@@ -1,12 +1,14 @@
-import pyautogui
-from pynput import mouse, keyboard
-import pyperclip
-import time
-import dotenv
 import os
-import sqlalchemy as sa
+import re
+import time
 import urllib
+import webbrowser
+import dotenv
 import pandas as pd
+import pyautogui
+import pyperclip
+from pynput import keyboard, mouse
+import sqlalchemy as sa
 
 dotenv.load_dotenv()
 
@@ -33,8 +35,6 @@ class contatoWpp():
         self.mensagem = dadosContato.DESCRICAO_MENSAGEM
         self.flag_img = True if dadosContato.ID_TIPO_ENVIO == 3 and dadosContato.CAMINHO_ARQUIVO else False
 
-        self.eventClickSearch()
-
     def eventClickSearch(self):
         # botao_pesquisa_desktop = pyautogui.locateCenterOnScreen('botao_pesquisa_desktop.png')
         # pyautogui.click(botao_pesquisa_desktop[0], botao_pesquisa_desktop[1], interval=3)
@@ -56,87 +56,88 @@ class contatoWpp():
         keyboard_controller.release(keyboard_key.delete)
 
     def eventSelectUser(self):
-        pyperclip.copy(self.telefone)
+        telefone = re.sub(r'\D', '', str(self.telefone))
 
-        keyboard_controller.press(keyboard_key.ctrl)
-        keyboard_controller.press('v')
-        keyboard_controller.release('v')
-        keyboard_controller.release(keyboard_key.ctrl)
+        if len(telefone) in (10, 11) and not telefone.startswith('55'):
+            telefone = f'55{telefone}'
 
-        time.sleep(2)
+        if not telefone.startswith('55') or len(telefone) not in (12, 13):
+            raise ValueError(
+                'Telefone invalido. Cadastre no formato internacional, por exemplo: 5511999999999.'
+            )
 
-        keyboard_controller.press(keyboard_key.down)
-        keyboard_controller.press(keyboard_key.enter)
-        keyboard_controller.release(keyboard_key.down)
-        keyboard_controller.release(keyboard_key.enter)
+        try:
+            os.startfile(f'whatsapp://send?phone={telefone}')
+        except OSError:
+            webbrowser.open(f'https://wa.me/{telefone}')
 
-        time.sleep(2)
+        # Aguarda o WhatsApp Desktop carregar a conversa aberta pelo link.
+        time.sleep(4)
 
     def eventClickFile(self):
-        botao_arquivo_desktop = pyautogui.locateCenterOnScreen('./img/botao_arquivo_desktop.png')
-        pyautogui.click(botao_arquivo_desktop[0], botao_arquivo_desktop[1], interval=2)
-
-        if self.flag_img:
-            botao_imagem_desktop = pyautogui.locateCenterOnScreen('./img/botao_imagem_desktop.png')
-            pyautogui.click(botao_imagem_desktop[0], botao_imagem_desktop[1], interval=3)
-            mouse_controller.click(button=mouse_button.left)
-            time.sleep(1)
-        else:
-            botao_imagem_desktop = pyautogui.locateCenterOnScreen('./img/botao_documento_desktop.png')
-            pyautogui.click(botao_imagem_desktop[0], botao_imagem_desktop[1], interval=3)
-            mouse_controller.click(button=mouse_button.left)
-            time.sleep(1)
+        # Desacoplado de reconhecimento visual de tela para evitar erros de
+        # "screen grab failed", escala de DPI e mudancas de tema do WhatsApp Desktop.
+        pass
 
     def eventSendMsg(self):
-        botao_mensagem_desktop = pyautogui.locateCenterOnScreen('./img/botao_arquivo_desktop.png')
-        calc = (botao_mensagem_desktop[0]*20)/100
-        pyautogui.click((botao_mensagem_desktop[0]+calc), botao_mensagem_desktop[1], interval=3)
-
+        # Ao selecionar uma conversa, o WhatsApp Desktop deixa o campo de
+        # mensagem em foco. Isso evita depender de imagens da interface,
+        # que variam conforme tema, escala e versão do aplicativo.
         pyperclip.copy(self.mensagem)
+        time.sleep(0.3)
 
         keyboard_controller.press(keyboard_key.ctrl)
         keyboard_controller.press('v')
         keyboard_controller.release('v')
         keyboard_controller.release(keyboard_key.ctrl)
 
-        time.sleep(0.5)
+        time.sleep(0.8)
 
         keyboard_controller.press(keyboard_key.enter)
         keyboard_controller.release(keyboard_key.enter)
 
-        time.sleep(0.5)
+        time.sleep(1.0)
 
     def eventSendFile(self):
-        caminho_arquivo = self.caminho_arquivo
-        pyperclip.copy(caminho_arquivo)
+        # Utiliza a area de transferencia nativa do Windows (CF_HDROP) para
+        # colar o arquivo diretamente na conversa aberta do WhatsApp Desktop.
+        import subprocess
 
+        abs_path = os.path.abspath(self.caminho_arquivo)
+        if not os.path.isfile(abs_path):
+            raise FileNotFoundError(f"Arquivo nao encontrado para envio: {abs_path}")
+
+        cmd = f"Set-Clipboard -Path '{abs_path}'"
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, timeout=10)
+        if res.returncode != 0:
+            raise RuntimeError(f"Falha ao copiar arquivo para clipboard: {res.stderr}")
+
+        time.sleep(0.5)
+
+        # Cola o arquivo no WhatsApp Desktop
         keyboard_controller.press(keyboard_key.ctrl)
         keyboard_controller.press('v')
         keyboard_controller.release('v')
         keyboard_controller.release(keyboard_key.ctrl)
 
-        time.sleep(0.5)
+        # Aguarda a tela de confirmacao e legenda do WhatsApp Desktop abrir
+        time.sleep(2)
 
+        # Se houver legenda, cola no campo que ja vem focado
+        if self.mensagem:
+            pyperclip.copy(self.mensagem)
+            time.sleep(0.3)
+            keyboard_controller.press(keyboard_key.ctrl)
+            keyboard_controller.press('v')
+            keyboard_controller.release('v')
+            keyboard_controller.release(keyboard_key.ctrl)
+            time.sleep(0.5)
+
+        # Confirma e envia o anexo
         keyboard_controller.press(keyboard_key.enter)
         keyboard_controller.release(keyboard_key.enter)
 
-        time.sleep(0.5)
-
-        pyperclip.copy(self.mensagem if self.mensagem is not None else '')
-        
-        time.sleep(0.5)
-
-        keyboard_controller.press(keyboard_key.ctrl)
-        keyboard_controller.press('v')
-        keyboard_controller.release('v')
-        keyboard_controller.release(keyboard_key.ctrl)
-
-        time.sleep(0.5)
-
-        keyboard_controller.press(keyboard_key.enter)
-        keyboard_controller.release(keyboard_key.enter)
-
-        time.sleep(1)
+        time.sleep(1.5)
 
 class dataBase():
     def __init__(self):
@@ -145,50 +146,88 @@ class dataBase():
         self.userName = os.getenv('userName')
         self.password = os.getenv('password')
         self.drive = os.getenv('driveConnection')
-    
+        self.schema = os.getenv('schema', 'automatizacao')
+        self.encrypt = os.getenv('encrypt', 'no')
+        self.trustServerCertificate = os.getenv('trustServerCertificate', 'yes')
+
     def connectDataBase(self):
         """
-        Em caso de não preenchimento dos campos userName e password no .env, a função usa autenticação do Windows para conectar ao banco de dados
+        Conecta ao SQL Server usando autenticacao configurada (SQL Auth ou Windows Auth).
+        Detecta automaticamente contas Windows ou configuracao de autenticacao integrada.
         """
-        if self.userName and self.password:
-            ps = urllib.parse.quote(self.password)
+        driver_str = self.drive.strip("{}") if self.drive else "ODBC Driver 17 for SQL Server"
+        driver = f"{{{driver_str}}}"
+        win_user = os.getenv("USERNAME", "")
 
+        trusted_env = os.getenv("trustedConnection", "").strip().lower()
+        if trusted_env in ("yes", "true", "1"):
+            use_trusted = True
+        elif trusted_env in ("no", "false", "0"):
+            use_trusted = False
+        else:
+            use_trusted = (
+                not (self.userName and self.password)
+                or (bool(self.userName) and self.userName.lower() == win_user.lower())
+            )
+
+        server = self.serverName
+
+        if use_trusted:
             connection_string = (
-                f'Driver=' + self.drive + ';'
-                f'Server=' + self.serverName + ';'
-                f"Database=" + self.dataBase + ';'
-                f'UID=' + self.userName + ';'
-                f'PWD=' + ps + ';'
-                f"Trusted_Connection=no;"
+                f"Driver={driver};"
+                f"Server={server};"
+                f"Database={self.dataBase};"
+                f"Trusted_Connection=yes;"
+                f"Encrypt={self.encrypt};"
+                f"TrustServerCertificate={self.trustServerCertificate};"
             )
-
-            connection_url = sa.engine.URL.create(
-                "mssql+pyodbc", 
-                query={"odbc_connect": connection_string}
-            )
-
-            try:
-                return sa.create_engine(connection_url,fast_executemany=True)
-            except Exception as ex:
-                return False, ex
         else:
             connection_string = (
-                f'Driver=' + self.drive + ';'
-                f'Server=' + self.serverName + ';'
-                f"Database=" + self.dataBase + ';'
-                f"Trusted_Connection=yes;"
+                f"Driver={driver};"
+                f"Server={server};"
+                f"Database={self.dataBase};"
+                f"UID={self.userName};"
+                f"PWD={self.password};"
+                f"Trusted_Connection=no;"
+                f"Encrypt={self.encrypt};"
+                f"TrustServerCertificate={self.trustServerCertificate};"
             )
 
-            connection_url = sa.engine.URL.create(
-                "mssql+pyodbc", 
-                query={"odbc_connect": connection_string}
-            )
+        connection_url = sa.engine.URL.create("mssql+pyodbc", query={"odbc_connect": connection_string})
+        return sa.create_engine(connection_url, fast_executemany=True, poolclass=sa.pool.NullPool)
 
-            try:
-                return sa.create_engine(connection_url,fast_executemany=True)
-            except Exception as ex:
-                return False, ex
-
-        
     def select(self, query=str):
-        return pd.DataFrame(pd.read_sql(sql= query, con= self.connectDataBase()))
+        try:
+            return pd.DataFrame(pd.read_sql(sql=query, con=self.connectDataBase()))
+        except Exception as ex:
+            raise ConnectionError(
+                'Nao foi possivel conectar ao SQL Server. Verifique servidor, '
+                'credenciais, servico SQL Server e configuracao de TLS.'
+            ) from ex
+
+    def iniciarEnvio(self, id_controle_envio):
+        self._atualizarStatusEnvio(id_controle_envio, 'PROCESSANDO')
+
+    def concluirEnvio(self, id_controle_envio):
+        self._atualizarStatusEnvio(id_controle_envio, 'ENVIADO')
+
+    def registrarErroEnvio(self, id_controle_envio, erro):
+        self._atualizarStatusEnvio(id_controle_envio, 'ERRO', str(erro)[:2000])
+
+    def _atualizarStatusEnvio(self, id_controle_envio, status, erro=None):
+        sql = sa.text(f"""
+            UPDATE {self.dataBase}.{self.schema}.CONTROLE_ENVIO_WPP
+            SET STATUS = :status,
+                TENTATIVAS = CASE WHEN :status = 'PROCESSANDO' THEN TENTATIVAS + 1 ELSE TENTATIVAS END,
+                DATA_INICIO = CASE WHEN :status = 'PROCESSANDO' THEN SYSDATETIME() ELSE DATA_INICIO END,
+                DATA_ENVIO = CASE WHEN :status = 'ENVIADO' THEN SYSDATETIME() ELSE DATA_ENVIO END,
+                MENSAGEM_ERRO = CASE WHEN :status = 'ERRO' THEN :erro ELSE NULL END
+            WHERE ID_CONTROLE_ENVIO = :id_controle_envio
+        """)
+
+        with self.connectDataBase().begin() as connection:
+            connection.execute(sql, {
+                'id_controle_envio': int(id_controle_envio),
+                'status': status,
+                'erro': erro,
+            })

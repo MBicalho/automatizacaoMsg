@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *.pyc
 
+google-sheets-service-account.json
+
 # C extensions
 *.so
 
@@ -106,3 +108,4 @@ target/
 
 *.xlsx*
 *.csv*
+*.lock
