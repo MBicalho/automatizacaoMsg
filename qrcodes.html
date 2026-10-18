@@ -164,7 +164,7 @@
   </div>
 
   <div class="footer">
-    Status atualizado automaticamente a cada 5 segundos.<br>
+    Status atualizado automaticamente a cada 3 segundos.<br>
     Você também pode desconectar direto pelo WhatsApp do celular em <i>Aparelhos Conectados</i>.
   </div>
 
@@ -190,6 +190,10 @@
           box.innerHTML = `<img src="${data.base64}" alt="QR Code ${instanceName}" />`;
           status.className = "badge status-connecting";
           status.innerText = "Aguardando Leitura";
+        } else {
+          box.innerHTML = '<span style="color: #f59e0b; font-size: 14px;">⏳ Gerando QR Code...<br><span style="font-size: 11px; color: #94a3b8;">aguarde alguns instantes</span></span>';
+          status.className = "badge status-connecting";
+          status.innerText = "Gerando QR";
         }
       } catch (err) {
         console.error(err);
@@ -203,24 +207,57 @@
 
       btn.disabled = true;
       btn.innerText = "⏳ Desconectando...";
-      box.innerHTML = '<span style="color: #f59e0b;">Desconectando sessão atual...</span>';
+      box.innerHTML = '<span style="color: #f59e0b; font-size: 14px;">Desconectando sessão atual...</span>';
 
       try {
-        await fetch(`${API_URL}/instance/logout/${instanceName}`, {
+        const resp = await fetch(`${API_URL}/instance/logout/${instanceName}`, {
           method: "DELETE",
           headers: { "apikey": API_KEY }
         });
+
+        if (!resp.ok) {
+          // Se o logout falhar ou a sessao ja estiver em connecting/close, faz o reset completo
+          await fetch(`${API_URL}/instance/delete/${instanceName}`, {
+            method: "DELETE",
+            headers: { "apikey": API_KEY }
+          });
+          await fetch(`${API_URL}/instance/create`, {
+            method: "POST",
+            headers: { "apikey": API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ instanceName: instanceName, integration: "WHATSAPP-BAILEYS" })
+          });
+        }
+
         status.className = "badge status-connecting";
-        status.innerText = "Desconectado";
+        status.innerText = "Aguardando Leitura";
+
         setTimeout(() => {
           checkInstance(instanceName, boxId, statusId);
           btn.disabled = false;
           btn.innerText = "🔌 Desconectar para Trocar";
         }, 1500);
       } catch (err) {
-        alert("Erro ao desconectar: " + err);
-        btn.disabled = false;
-        btn.innerText = "🔌 Desconectar para Trocar";
+        console.warn("Tentando reset forcado da instancia:", err);
+        try {
+          await fetch(`${API_URL}/instance/delete/${instanceName}`, {
+            method: "DELETE",
+            headers: { "apikey": API_KEY }
+          });
+          await fetch(`${API_URL}/instance/create`, {
+            method: "POST",
+            headers: { "apikey": API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ instanceName: instanceName, integration: "WHATSAPP-BAILEYS" })
+          });
+          setTimeout(() => {
+            checkInstance(instanceName, boxId, statusId);
+            btn.disabled = false;
+            btn.innerText = "🔌 Desconectar para Trocar";
+          }, 1500);
+        } catch (err2) {
+          alert("Erro ao desconectar: " + err2);
+          btn.disabled = false;
+          btn.innerText = "🔌 Desconectar para Trocar";
+        }
       }
     }
 
@@ -230,7 +267,7 @@
     }
 
     updateAll();
-    setInterval(updateAll, 5000);
+    setInterval(updateAll, 3000);
   </script>
 </body>
 </html>

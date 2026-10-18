@@ -291,10 +291,14 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
                 )
         except urllib.error.HTTPError as ex:
             err_body = ex.read().decode()
+            if "reading 'id'" in err_body or "not found" in err_body.lower() or ex.code == 404:
+                friendly_msg = f"A conta '{inst}' não está conectada ao WhatsApp. Abra o qrcodes.html e escaneie o QR Code."
+            else:
+                friendly_msg = f"Erro HTTP {ex.code} na Evolution API ({inst}) para {masked}: {err_body}"
             return ChannelResult(
                 success=False,
                 status="FALHA",
-                detail=f"Erro HTTP {ex.code} na Evolution API ({inst}) para {masked}: {err_body}",
+                detail=friendly_msg,
                 channel_name=f"EVOLUTION_API_{inst.upper()}",
                 duration_seconds=round(time.monotonic() - start_time, 3),
             )
@@ -369,10 +373,14 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
                 )
         except urllib.error.HTTPError as ex:
             err_body = ex.read().decode()
+            if "reading 'id'" in err_body or "not found" in err_body.lower() or ex.code == 404:
+                friendly_msg = f"A conta '{inst}' não está conectada ao WhatsApp. Abra o qrcodes.html e escaneie o QR Code."
+            else:
+                friendly_msg = f"Erro HTTP {ex.code} ao enviar arquivo via Evolution API ({inst}): {err_body}"
             return ChannelResult(
                 success=False,
                 status="FALHA",
-                detail=f"Erro HTTP {ex.code} ao enviar arquivo via Evolution API ({inst}): {err_body}",
+                detail=friendly_msg,
                 channel_name=f"EVOLUTION_API_{inst.upper()}",
                 duration_seconds=round(time.monotonic() - start_time, 3),
             )
