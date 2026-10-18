@@ -66,13 +66,29 @@ class contatoWpp():
                 'Telefone invalido. Cadastre no formato internacional, por exemplo: 5511999999999.'
             )
 
+        # Se houver mensagem de texto simples, passa na URI para o WhatsApp preencher automaticamente
+        uri = f'whatsapp://send?phone={telefone}'
+
         try:
-            os.startfile(f'whatsapp://send?phone={telefone}')
+            os.startfile(uri)
         except OSError:
             webbrowser.open(f'https://wa.me/{telefone}')
 
-        # Aguarda o WhatsApp Desktop carregar a conversa aberta pelo link.
-        time.sleep(4)
+        # Aguarda o WhatsApp Desktop carregar a conversa aberta pelo link
+        time.sleep(5.0)
+
+        # Garante o foco na janela do WhatsApp Desktop
+        try:
+            import subprocess
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "(New-Object -ComObject WScript.Shell).AppActivate('WhatsApp')"],
+                capture_output=True,
+                timeout=3
+            )
+        except Exception:
+            pass
+
+        time.sleep(0.5)
 
     def eventClickFile(self):
         # Desacoplado de reconhecimento visual de tela para evitar erros de
@@ -80,23 +96,66 @@ class contatoWpp():
         pass
 
     def eventSendMsg(self):
-        # Ao selecionar uma conversa, o WhatsApp Desktop deixa o campo de
-        # mensagem em foco. Isso evita depender de imagens da interface,
-        # que variam conforme tema, escala e versão do aplicativo.
-        pyperclip.copy(self.mensagem)
+        time.sleep(0.5)
+
+        # 1. Localiza a janela do WhatsApp Desktop e traz para primeiro plano
+        whatsapp_win = None
+        try:
+            import pygetwindow as gw
+            candidates = gw.getWindowsWithTitle('WhatsApp')
+            if not candidates:
+                candidates = [w for w in gw.getAllWindows() if 'whatsapp' in w.title.lower()]
+            if candidates:
+                whatsapp_win = candidates[0]
+                if whatsapp_win.isMinimized:
+                    whatsapp_win.restore()
+                whatsapp_win.activate()
+                time.sleep(0.5)
+        except Exception:
+            pass
+
+        # 2. Se localizou a janela, clica dentro da caixa de texto para forçar o foco do cursor
+        if whatsapp_win and whatsapp_win.width > 200 and whatsapp_win.height > 200:
+            try:
+                input_x = whatsapp_win.left + int(whatsapp_win.width * 0.6)
+                input_y = whatsapp_win.top + whatsapp_win.height - 45
+                pyautogui.click(input_x, input_y)
+                time.sleep(0.4)
+            except Exception:
+                pass
+        else:
+            # Fallback para focar via WScript.Shell
+            try:
+                import subprocess
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", "(New-Object -ComObject WScript.Shell).AppActivate('WhatsApp')"],
+                    capture_output=True,
+                    timeout=3
+                )
+                time.sleep(0.5)
+            except Exception:
+                pass
+
+        # 3. Copia a mensagem para a área de transferência e cola via Ctrl+V no campo focado
+        if getattr(self, 'mensagem', None):
+            pyperclip.copy(str(self.mensagem))
+            time.sleep(0.3)
+            keyboard_controller.press(keyboard_key.ctrl)
+            keyboard_controller.press('v')
+            keyboard_controller.release('v')
+            keyboard_controller.release(keyboard_key.ctrl)
+            time.sleep(0.5)
+
+        # 4. Dispara o envio com Enter (pyautogui e pynput)
+        try:
+            pyautogui.press('enter')
+        except Exception:
+            pass
+
         time.sleep(0.3)
-
-        keyboard_controller.press(keyboard_key.ctrl)
-        keyboard_controller.press('v')
-        keyboard_controller.release('v')
-        keyboard_controller.release(keyboard_key.ctrl)
-
-        time.sleep(0.8)
-
         keyboard_controller.press(keyboard_key.enter)
         keyboard_controller.release(keyboard_key.enter)
-
-        time.sleep(1.0)
+        time.sleep(1.5)
 
     def eventSendFile(self):
         # Utiliza a area de transferencia nativa do Windows (CF_HDROP) para

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Gerenciador de WhatsApps - Evolution API</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      margin-bottom: 8px;
+      font-size: 28px;
+    }
+    p.subtitle {
+      color: #94a3b8;
+      margin-bottom: 32px;
+      text-align: center;
+      max-width: 650px;
+      line-height: 1.5;
+    }
+    .grid {
+      display: flex;
+      gap: 32px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 900px;
+      width: 100%;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 24px;
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      position: relative;
+    }
+    .card h2 {
+      margin-top: 0;
+      margin-bottom: 4px;
+      font-size: 20px;
+      color: #38bdf8;
+    }
+    .card .tag {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+    .qr-box {
+      width: 260px;
+      height: 260px;
+      background: #ffffff;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      overflow: hidden;
+      position: relative;
+      text-align: center;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+    .qr-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .badge {
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+    .status-connecting {
+      background: #f59e0b20;
+      color: #fbbf24;
+      border: 1px solid #f59e0b40;
+    }
+    .status-open {
+      background: #10b98120;
+      color: #34d399;
+      border: 1px solid #10b98140;
+    }
+    .btn-logout {
+      background: #ef444420;
+      color: #f87171;
+      border: 1px solid #ef444450;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-logout:hover {
+      background: #ef4444;
+      color: #ffffff;
+      border-color: #ef4444;
+    }
+    .btn-logout:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .footer {
+      margin-top: 40px;
+      color: #64748b;
+      font-size: 13px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Painel de Conexões WhatsApp</h1>
+  <p class="subtitle">
+    Você pode trocar o WhatsApp de qualquer uma das contas a qualquer momento.<br>
+    Basta clicar em <b>Desconectar para Trocar</b> abaixo e escanear o novo QR Code com o outro aparelho!
+  </p>
+
+  <div class="grid">
+    <!-- Conta 1 -->
+    <div class="card" id="card-conta_1">
+      <h2>Conta 1</h2>
+      <div class="tag">Responsável: <b>Lead Pacifico</b></div>
+      <div class="qr-box" id="qr-box-1">
+        <span style="color: #64748b;">Carregando status...</span>
+      </div>
+      <div class="badge status-connecting" id="status-1">Verificando...</div>
+      <button class="btn-logout" id="btn-logout-1" onclick="desconectar('conta_1', 'btn-logout-1', 'qr-box-1', 'status-1')">
+        🔌 Desconectar para Trocar
+      </button>
+    </div>
+
+    <!-- Conta 2 -->
+    <div class="card" id="card-conta_2">
+      <h2>Conta 2</h2>
+      <div class="tag">Responsável: <b>Lead Daniela</b></div>
+      <div class="qr-box" id="qr-box-2">
+        <span style="color: #64748b;">Carregando status...</span>
+      </div>
+      <div class="badge status-connecting" id="status-2">Verificando...</div>
+      <button class="btn-logout" id="btn-logout-2" onclick="desconectar('conta_2', 'btn-logout-2', 'qr-box-2', 'status-2')">
+        🔌 Desconectar para Trocar
+      </button>
+    </div>
+  </div>
+
+  <div class="footer">
+    Status atualizado automaticamente a cada 5 segundos.<br>
+    Você também pode desconectar direto pelo WhatsApp do celular em <i>Aparelhos Conectados</i>.
+  </div>
+
+  <script>
+    const API_URL = "http://localhost:8080";
+    const API_KEY = "minha_chave_secreta_123";
+
+    async function checkInstance(instanceName, boxId, statusId) {
+      try {
+        const res = await fetch(`${API_URL}/instance/connect/${instanceName}`, {
+          headers: { "apikey": API_KEY }
+        });
+        const data = await res.json();
+        const box = document.getElementById(boxId);
+        const status = document.getElementById(statusId);
+
+        const isConnected = data.instance?.state === "open" || data.instance?.status === "open" || data.state === "open" || data.status === "open";
+        if (isConnected) {
+          box.innerHTML = '<span style="color: #10b981; font-weight: bold; font-size: 18px;">✅ Conectado com Sucesso!</span><span style="color: #64748b; font-size: 12px; margin-top: 8px;">Pronto para envio</span>';
+          status.className = "badge status-open";
+          status.innerText = "Conectado";
+        } else if (data.base64) {
+          box.innerHTML = `<img src="${data.base64}" alt="QR Code ${instanceName}" />`;
+          status.className = "badge status-connecting";
+          status.innerText = "Aguardando Leitura";
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function desconectar(instanceName, btnId, boxId, statusId) {
+      const btn = document.getElementById(btnId);
+      const box = document.getElementById(boxId);
+      const status = document.getElementById(statusId);
+
+      btn.disabled = true;
+      btn.innerText = "⏳ Desconectando...";
+      box.innerHTML = '<span style="color: #f59e0b;">Desconectando sessão atual...</span>';
+
+      try {
+        await fetch(`${API_URL}/instance/logout/${instanceName}`, {
+          method: "DELETE",
+          headers: { "apikey": API_KEY }
+        });
+        status.className = "badge status-connecting";
+        status.innerText = "Desconectado";
+        setTimeout(() => {
+          checkInstance(instanceName, boxId, statusId);
+          btn.disabled = false;
+          btn.innerText = "🔌 Desconectar para Trocar";
+        }, 1500);
+      } catch (err) {
+        alert("Erro ao desconectar: " + err);
+        btn.disabled = false;
+        btn.innerText = "🔌 Desconectar para Trocar";
+      }
+    }
+
+    function updateAll() {
+      checkInstance("conta_1", "qr-box-1", "status-1");
+      checkInstance("conta_2", "qr-box-2", "status-2");
+    }
+
+    updateAll();
+    setInterval(updateAll, 5000);
+  </script>
+</body>
+</html>

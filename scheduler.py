@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from google_sheets import GoogleSheetsClient
+from sync_incoming import IncomingMessagesSync
 from sync_messages import MessageCatalogSync
 from sync_queue import QueueSync
 from worker import QueueWorker
@@ -87,10 +88,15 @@ def run_single_cycle() -> dict[str, Any]:
     worker = QueueWorker(sheets_client=client)
     worker_stats = worker.process_pending_requests()
 
+    # 4. Sincroniza respostas recebidas dos leads
+    incoming_sync = IncomingMessagesSync(sheets_client=client)
+    incoming_stats = incoming_sync.sync_incoming_messages()
+
     return {
         "catalog": msg_stats,
         "queue": queue_stats,
         "worker": worker_stats,
+        "incoming": incoming_stats,
     }
 
 
@@ -122,9 +128,18 @@ def run_scheduler(interval_minutes: int = 15) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--once":
-        with ProcessLock():
-            res = run_single_cycle()
-            print("Execucao unica finalizada:", res)
+    if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
+        print("Uso: python scheduler.py [--once | --help]")
+        print("  --once   Executa um unico ciclo (sincronizacao + envio) e encerra.")
+        print("  (padrao) Executa continuamente a cada 15 minutos com lock exclusivo.")
+        sys.exit(0)
+    elif len(sys.argv) > 1 and sys.argv[1] == "--once":
+        try:
+            with ProcessLock():
+                res = run_single_cycle()
+                print("Execucao unica finalizada:", res)
+        except AlreadyRunningError as err:
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Execucao ignorada: {err}")
+            sys.exit(0)
     else:
         run_scheduler()

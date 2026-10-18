@@ -19,14 +19,32 @@ def execute_sql_file(sql_file_path: Path) -> None:
     with engine.begin() as conn:
         for batch in batches:
             cleaned = batch.strip()
-            if cleaned:
-                # Remove USE statements se pyodbc ja conectar no banco configurado
-                # mas mantem os comandos DDL/DML
-                conn.execute(sa.text(cleaned))
+            if not cleaned:
+                continue
+
+            # Se for apenas declaracao USE, pode ignorar pois pyodbc ja esta no banco
+            if re.match(r"^USE\s+\[?\w+\]?;?$", cleaned, flags=re.IGNORECASE):
+                continue
+
+            conn.execute(sa.text(cleaned))
 
     print(f"Migracao executada com sucesso: {sql_file_path.name}")
 
 
+def run_all_migrations() -> None:
+    migrations_dir = Path(__file__).parent / "sql" / "migrations"
+    migration_files = sorted(migrations_dir.glob("*.sql"))
+
+    if not migration_files:
+        print(f"Nenhum arquivo de migracao encontrado em {migrations_dir}")
+        return
+
+    print(f"Encontradas {len(migration_files)} migracoes. Iniciando execucao...")
+    for migration_file in migration_files:
+        execute_sql_file(migration_file)
+
+    print("Todas as migracoes foram concluidas com sucesso!")
+
+
 if __name__ == "__main__":
-    migration_file = Path(__file__).parent / "sql" / "migrations" / "001_evolucao_schema_mensagens_filas.sql"
-    execute_sql_file(migration_file)
+    run_all_migrations()

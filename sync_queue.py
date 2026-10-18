@@ -77,6 +77,18 @@ class QueueSync:
                 raw_contato = row.values.get("Contato")
                 raw_mensagens = row.values.get("Mensagem")
                 raw_envio = str(row.values.get("Envio", "Pendente")).strip()
+                raw_origem = str(row.values.get("Origem") or row.values.get("origem") or "").strip()
+
+                # Mapeia Origem para instancia do WhatsApp (Evolution API)
+                # 'Lead Pacifico' -> conta_1
+                # 'Lead Daniela'  -> conta_2
+                origem_lower = raw_origem.lower()
+                if "daniela" in origem_lower or "conta 2" in origem_lower or "contato 2" in origem_lower:
+                    instancia_envio = "conta_2"
+                elif "pacifico" in origem_lower or "conta 1" in origem_lower or "contato 1" in origem_lower:
+                    instancia_envio = "conta_1"
+                else:
+                    instancia_envio = "conta_1"
 
                 # Normalizacao do telefone
                 try:
@@ -172,11 +184,12 @@ class QueueSync:
                 if not existing_req:
                     req_insert = conn.execute(
                         sa.text(f"""
+                            SET NOCOUNT ON;
                             INSERT INTO {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP
                                 (ID_CONTROLE_SHEETS, ID_CONTATO, STATUS_OPERADOR, STATUS_TECNICO,
-                                 CODIGOS_MENSAGENS, DATA_CRIACAO)
+                                 CODIGOS_MENSAGENS, ORIGEM, INSTANCIA_ENVIO, DATA_CRIACAO)
                             VALUES
-                                (:ctrl_id, :id_contato, :operador, 'PENDENTE', :msgs, SYSDATETIME());
+                                (:ctrl_id, :id_contato, :operador, 'PENDENTE', :msgs, :origem, :instancia, SYSDATETIME());
                             SELECT SCOPE_IDENTITY() AS ID_SOLICITACAO;
                         """),
                         {
@@ -184,6 +197,8 @@ class QueueSync:
                             "id_contato": id_contato,
                             "operador": raw_envio,
                             "msgs": str(raw_mensagens or ""),
+                            "origem": raw_origem,
+                            "instancia": instancia_envio,
                         }
                     ).mappings().fetchone()
                     id_solicitacao = req_insert["ID_SOLICITACAO"]
@@ -195,13 +210,17 @@ class QueueSync:
                             UPDATE {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP
                             SET ID_CONTATO = :id_contato,
                                 STATUS_OPERADOR = :operador,
-                                CODIGOS_MENSAGENS = :msgs
+                                CODIGOS_MENSAGENS = :msgs,
+                                ORIGEM = :origem,
+                                INSTANCIA_ENVIO = :instancia
                             WHERE ID_SOLICITACAO = :req_id
                         """),
                         {
                             "id_contato": id_contato,
                             "operador": raw_envio,
                             "msgs": str(raw_mensagens or ""),
+                            "origem": raw_origem,
+                            "instancia": instancia_envio,
                             "req_id": id_solicitacao,
                         }
                     )
@@ -240,7 +259,7 @@ class QueueSync:
                         sa.text(f"""
                             UPDATE {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP
                             SET STATUS_TECNICO = 'PENDENTE'
-                            WHERE ID_SOLICITACAO = :req_id AND STATUS_TECNICO IN ('ERRO', 'FALHA_PARCIAL', 'CANCELADO')
+                            WHERE ID_SOLICITACAO = :req_id AND STATUS_TECNICO <> 'PENDENTE'
                               AND EXISTS (
                                   SELECT 1 FROM {self.db.dataBase}.{self.db.schema}.ETAPAS_SOLICITACAO_WPP
                                   WHERE ID_SOLICITACAO = :req_id AND STATUS = 'PENDENTE'
@@ -345,21 +364,21 @@ class QueueSync:
                     )
                     created_steps += 1
 
-            # Garante que a solicitacao passe a PENDENTE caso existam etapas pendentes
-            if raw_envio.lower() == "pendente":
-                conn.execute(
-                    sa.text(f"""
-                        UPDATE {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP
-                        SET STATUS_TECNICO = 'PENDENTE'
-                        WHERE ID_SOLICITACAO = :req_id
-                          AND STATUS_TECNICO IN ('CANCELADO', 'ERRO', 'FALHA_PARCIAL')
-                          AND EXISTS (
-                              SELECT 1 FROM {self.db.dataBase}.{self.db.schema}.ETAPAS_SOLICITACAO_WPP
-                              WHERE ID_SOLICITACAO = :req_id AND STATUS = 'PENDENTE'
-                          )
-                    """),
-                    {"req_id": id_solicitacao}
-                )
+                # Garante que a solicitacao passe a PENDENTE caso existam etapas pendentes
+                if raw_envio.lower() == "pendente":
+                    conn.execute(
+                        sa.text(f"""
+                            UPDATE {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP
+                            SET STATUS_TECNICO = 'PENDENTE'
+                            WHERE ID_SOLICITACAO = :req_id
+                              AND STATUS_TECNICO <> 'PENDENTE'
+                              AND EXISTS (
+                                  SELECT 1 FROM {self.db.dataBase}.{self.db.schema}.ETAPAS_SOLICITACAO_WPP
+                                  WHERE ID_SOLICITACAO = :req_id AND STATUS = 'PENDENTE'
+                              )
+                        """),
+                        {"req_id": id_solicitacao}
+                    )
 
         return {
             "created_requests": created_requests,
@@ -428,6 +447,7 @@ class QueueSync:
         # 3. Insere novo contato vinculado ao ID_CONTROLE_SHEETS
         ins = conn.execute(
             sa.text(f"""
+                SET NOCOUNT ON;
                 INSERT INTO {self.db.dataBase}.{self.db.schema}.CONTATOS_WPP
                     (ID_CONTROLE_SHEETS, NOME, TELEFONE, TELEFONE_NORMALIZADO, ATIVO, CONSENTIMENTO_STATUS, CONSENTIMENTO_DATA, CONSENTIMENTO_ORIGEM)
                 VALUES
@@ -461,6 +481,7 @@ class QueueSync:
         if not dummy:
             dummy = conn.execute(
                 sa.text(f"""
+                    SET NOCOUNT ON;
                     INSERT INTO {self.db.dataBase}.{self.db.schema}.CONTATOS_WPP
                         (NOME, TELEFONE, TELEFONE_NORMALIZADO, ATIVO, CONSENTIMENTO_STATUS)
                     VALUES

@@ -1,6 +1,10 @@
 USE AUTOMATIZACAO;
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- Migracao 002: Adiciona ID_CONTROLE_SHEETS na tabela CONTATOS_WPP
 -- Permite rastrear e atualizar o contato diretamente quando telefone ou nome
 -- forem alterados na linha correspondente da planilha (aba Controle).

@@ -90,7 +90,7 @@ class QueueWorker:
             requests = conn.execute(
                 sa.text(f"""
                     SELECT TOP (:max_req)
-                        S.ID_SOLICITACAO, S.ID_CONTROLE_SHEETS, S.ID_CONTATO,
+                        S.ID_SOLICITACAO, S.ID_CONTROLE_SHEETS, S.ID_CONTATO, S.INSTANCIA_ENVIO,
                         C.NOME, C.TELEFONE_NORMALIZADO, C.ATIVO, C.CONSENTIMENTO_STATUS, C.BLOQUEADO
                     FROM {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP S
                     JOIN {self.db.dataBase}.{self.db.schema}.CONTATOS_WPP C ON S.ID_CONTATO = C.ID_CONTATO
@@ -198,8 +198,10 @@ class QueueWorker:
                         texto = step["TEXTO_RENDERIZADO"] or ""
                         caminho_arq = step["CAMINHO_ARQUIVO"]
 
+                        target_instance = req.get("INSTANCIA_ENVIO") or "conta_1"
+
                         if tipo_envio == 1:
-                            send_res = self.channel.send_text(phone, texto)
+                            send_res = self.channel.send_text(phone, texto, instance=target_instance)
                         else:
                             file_path = Path(caminho_arq) if caminho_arq else Path("")
                             send_res = self.channel.send_file(
@@ -207,7 +209,10 @@ class QueueWorker:
                                 file_path=file_path,
                                 caption=texto,
                                 is_image=(tipo_envio == 3),
+                                instance=target_instance,
                             )
+
+                        print(f"[{send_res.channel_name}] {send_res.status}: {send_res.detail}")
 
                         # Registra tentativa no historico
                         conn.execute(

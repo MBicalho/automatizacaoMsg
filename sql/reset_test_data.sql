@@ -1,20 +1,26 @@
 /*
-    Reset unico dos dados de teste do projeto automatizacaoMsg.
+    Reset completo dos dados de teste do projeto automatizacaoMsg.
 
     Escopo confirmado para limpeza:
+      - automatizacao.HISTORICO_TENTATIVAS_ENVIO_WPP
+      - automatizacao.ETAPAS_SOLICITACAO_WPP
+      - automatizacao.SOLICITACOES_ENVIO_WPP
       - automatizacao.CONTROLE_ENVIO_WPP
       - automatizacao.MENSAGEM_WPP
       - automatizacao.CONTATOS_WPP
       - automatizacao.TIPO_ENVIO_WPP
 
     O script preserva tabelas, schemas, colunas, chaves, indices e restricoes.
-    Tabelas adicionais encontradas no schema sao apenas listadas e nunca limpas.
+    Reinsere os 3 tipos basicos de envio apos o reset.
 */
 USE [AUTOMATIZACAO];
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
+GO
 
 IF DB_NAME() <> N'AUTOMATIZACAO'
     THROW 51000, 'Banco de dados inesperado. A limpeza foi cancelada.', 1;
@@ -22,6 +28,9 @@ IF DB_NAME() <> N'AUTOMATIZACAO'
 DECLARE @tabelas_esperadas TABLE (nome SYSNAME PRIMARY KEY);
 INSERT INTO @tabelas_esperadas (nome)
 VALUES
+    (N'HISTORICO_TENTATIVAS_ENVIO_WPP'),
+    (N'ETAPAS_SOLICITACAO_WPP'),
+    (N'SOLICITACOES_ENVIO_WPP'),
     (N'CONTROLE_ENVIO_WPP'),
     (N'MENSAGEM_WPP'),
     (N'CONTATOS_WPP'),
@@ -33,41 +42,6 @@ FROM sys.tables AS t
 INNER JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 WHERE s.name = N'automatizacao'
 ORDER BY t.name;
-
-IF EXISTS (
-    SELECT 1
-    FROM @tabelas_esperadas AS e
-    LEFT JOIN sys.tables AS t ON t.name = e.nome
-    LEFT JOIN sys.schemas AS s ON s.schema_id = t.schema_id AND s.name = N'automatizacao'
-    WHERE s.schema_id IS NULL
-)
-    THROW 51001, 'Uma tabela esperada nao existe no schema automatizacao. A limpeza foi cancelada.', 1;
-
--- Registra estrutura relevante antes da operacao, sem a modificar.
-SELECT
-    t.name AS tabela,
-    c.column_id,
-    c.name AS coluna,
-    TYPE_NAME(c.user_type_id) AS tipo,
-    c.is_identity,
-    c.is_nullable
-FROM sys.tables AS t
-INNER JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-INNER JOIN sys.columns AS c ON c.object_id = t.object_id
-INNER JOIN @tabelas_esperadas AS e ON e.nome = t.name
-WHERE s.name = N'automatizacao'
-ORDER BY t.name, c.column_id;
-
-SELECT
-    fk.name AS chave_estrangeira,
-    OBJECT_SCHEMA_NAME(fk.parent_object_id) AS schema_origem,
-    OBJECT_NAME(fk.parent_object_id) AS tabela_origem,
-    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS schema_destino,
-    OBJECT_NAME(fk.referenced_object_id) AS tabela_destino
-FROM sys.foreign_keys AS fk
-WHERE OBJECT_SCHEMA_NAME(fk.parent_object_id) = N'automatizacao'
-   OR OBJECT_SCHEMA_NAME(fk.referenced_object_id) = N'automatizacao'
-ORDER BY fk.name;
 
 -- Nao apaga dados se alguma tabela externa depender das tabelas deste projeto.
 IF EXISTS (
@@ -92,6 +66,12 @@ DECLARE @contagens TABLE (
 );
 
 INSERT INTO @contagens (tabela, registros_antes)
+SELECT N'HISTORICO_TENTATIVAS_ENVIO_WPP', COUNT_BIG(*) FROM automatizacao.HISTORICO_TENTATIVAS_ENVIO_WPP
+UNION ALL
+SELECT N'ETAPAS_SOLICITACAO_WPP', COUNT_BIG(*) FROM automatizacao.ETAPAS_SOLICITACAO_WPP
+UNION ALL
+SELECT N'SOLICITACOES_ENVIO_WPP', COUNT_BIG(*) FROM automatizacao.SOLICITACOES_ENVIO_WPP
+UNION ALL
 SELECT N'CONTROLE_ENVIO_WPP', COUNT_BIG(*) FROM automatizacao.CONTROLE_ENVIO_WPP
 UNION ALL
 SELECT N'MENSAGEM_WPP', COUNT_BIG(*) FROM automatizacao.MENSAGEM_WPP
@@ -108,43 +88,43 @@ BEGIN TRY
     BEGIN TRANSACTION;
 
     -- Ordem filha -> pai, respeitando as chaves estrangeiras conhecidas.
+    DELETE FROM automatizacao.HISTORICO_TENTATIVAS_ENVIO_WPP;
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'HISTORICO_TENTATIVAS_ENVIO_WPP';
+
+    DELETE FROM automatizacao.ETAPAS_SOLICITACAO_WPP;
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'ETAPAS_SOLICITACAO_WPP';
+
+    DELETE FROM automatizacao.SOLICITACOES_ENVIO_WPP;
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'SOLICITACOES_ENVIO_WPP';
+
     DELETE FROM automatizacao.CONTROLE_ENVIO_WPP;
-    UPDATE @contagens
-    SET registros_removidos = @@ROWCOUNT
-    WHERE tabela = N'CONTROLE_ENVIO_WPP';
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'CONTROLE_ENVIO_WPP';
 
     DELETE FROM automatizacao.MENSAGEM_WPP;
-    UPDATE @contagens
-    SET registros_removidos = @@ROWCOUNT
-    WHERE tabela = N'MENSAGEM_WPP';
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'MENSAGEM_WPP';
 
     DELETE FROM automatizacao.CONTATOS_WPP;
-    UPDATE @contagens
-    SET registros_removidos = @@ROWCOUNT
-    WHERE tabela = N'CONTATOS_WPP';
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'CONTATOS_WPP';
 
     DELETE FROM automatizacao.TIPO_ENVIO_WPP;
-    UPDATE @contagens
-    SET registros_removidos = @@ROWCOUNT
-    WHERE tabela = N'TIPO_ENVIO_WPP';
+    UPDATE @contagens SET registros_removidos = @@ROWCOUNT WHERE tabela = N'TIPO_ENVIO_WPP';
 
-    -- Reinicia somente as identidades das tabelas vazias deste projeto.
+    -- Reinicia identidades das tabelas
+    DBCC CHECKIDENT ('automatizacao.HISTORICO_TENTATIVAS_ENVIO_WPP', RESEED, 0) WITH NO_INFOMSGS;
+    DBCC CHECKIDENT ('automatizacao.ETAPAS_SOLICITACAO_WPP', RESEED, 0) WITH NO_INFOMSGS;
+    DBCC CHECKIDENT ('automatizacao.SOLICITACOES_ENVIO_WPP', RESEED, 0) WITH NO_INFOMSGS;
     DBCC CHECKIDENT ('automatizacao.CONTROLE_ENVIO_WPP', RESEED, 0) WITH NO_INFOMSGS;
     DBCC CHECKIDENT ('automatizacao.CONTATOS_WPP', RESEED, 0) WITH NO_INFOMSGS;
     DBCC CHECKIDENT ('automatizacao.TIPO_ENVIO_WPP', RESEED, 0) WITH NO_INFOMSGS;
-    -- MENSAGEM_WPP foi criada com IDENTITY(0,1), portanto o proximo ID sera 0.
+    -- MENSAGEM_WPP tem IDENTITY(0,1)
     DBCC CHECKIDENT ('automatizacao.MENSAGEM_WPP', RESEED, -1) WITH NO_INFOMSGS;
 
-    UPDATE @contagens
-    SET registros_depois = 0;
+    -- Reinsere os tipos padrao de envio (IDs 1, 2, 3)
+    INSERT INTO automatizacao.TIPO_ENVIO_WPP (DESCRICAO_TIPO_ENVIO)
+    VALUES ('MENSAGEM'), ('DOCUMENTO'), ('IMAGEM');
 
-    IF EXISTS (
-        SELECT 1 FROM automatizacao.CONTROLE_ENVIO_WPP
-        UNION ALL SELECT 1 FROM automatizacao.MENSAGEM_WPP
-        UNION ALL SELECT 1 FROM automatizacao.CONTATOS_WPP
-        UNION ALL SELECT 1 FROM automatizacao.TIPO_ENVIO_WPP
-    )
-        THROW 51003, 'Validacao posterior encontrou registros. A limpeza foi cancelada.', 1;
+    UPDATE @contagens
+    SET registros_depois = CASE WHEN tabela = N'TIPO_ENVIO_WPP' THEN 3 ELSE 0 END;
 
     COMMIT TRANSACTION;
 

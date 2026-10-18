@@ -1,6 +1,10 @@
 USE AUTOMATIZACAO;
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- Migracao 001: Evolucao de Schema para Catalogo de Mensagens, Filas Persistentes e Rastreabilidade
 -- Esta migracao e estritamente nao-destrutiva e idempotente.
 -- Preserva todas as tabelas e dados existentes sem TRUNCATE ou DROP.
