@@ -84,13 +84,23 @@ def run_single_cycle() -> dict[str, Any]:
     queue_sync = QueueSync(client)
     queue_stats = queue_sync.sync_requests()
 
-    # 3. Worker de envio
-    worker = QueueWorker(sheets_client=client)
-    worker_stats = worker.process_pending_requests()
+    # 3. Worker de envio (limite de no maximo 5 contatos por conta por ciclo)
+    worker_stats = {"steps_sent": 0, "steps_failed": 0, "requests_completed": 0}
+    try:
+        worker = QueueWorker(sheets_client=client)
+        worker_stats = worker.process_pending_requests(max_per_account=5)
+    except Exception as ex:
+        print(f"[ERRO WORKER] Falha durante processamento da fila de envio: {ex}")
+        worker_stats["error"] = str(ex)
 
-    # 4. Sincroniza respostas recebidas dos leads
-    incoming_sync = IncomingMessagesSync(sheets_client=client)
-    incoming_stats = incoming_sync.sync_incoming_messages()
+    # 4. Sincroniza respostas recebidas dos leads (executa SEMPRE para todos os leads da planilha)
+    incoming_stats = {"checked": 0, "updated": 0}
+    try:
+        incoming_sync = IncomingMessagesSync(sheets_client=client)
+        incoming_stats = incoming_sync.sync_incoming_messages()
+    except Exception as ex:
+        print(f"[ERRO RESPOSTAS] Falha na sincronizacao de respostas dos leads: {ex}")
+        incoming_stats["error"] = str(ex)
 
     return {
         "catalog": msg_stats,

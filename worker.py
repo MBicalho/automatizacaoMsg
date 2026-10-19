@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
+import os
 from pathlib import Path
+import random
+import time
 from typing import Any
 import sqlalchemy as sa
 
@@ -22,10 +26,26 @@ class QueueWorker:
         channel: WhatsAppChannel | None = None,
         sheets_client: GoogleSheetsClient | None = None,
         db: dataBase | None = None,
+        inter_contact_delay_range: tuple[float, float] = (15.0, 35.0),
+        inter_step_delay_range: tuple[float, float] = (3.0, 7.0),
+        enable_antiban_delays: bool | None = None,
     ) -> None:
         self.channel = channel or get_channel()
         self.sheets = sheets_client or GoogleSheetsClient.from_environment()
         self.db = db or dataBase()
+
+        self.inter_contact_delay_min = inter_contact_delay_range[0]
+        self.inter_contact_delay_max = inter_contact_delay_range[1]
+        self.inter_step_delay_min = inter_step_delay_range[0]
+        self.inter_step_delay_max = inter_step_delay_range[1]
+
+        from channels import DryRunWhatsAppChannel
+        if enable_antiban_delays is not None:
+            self.enable_antiban_delays = enable_antiban_delays
+        else:
+            is_dry = isinstance(self.channel, DryRunWhatsAppChannel) or os.getenv("WHATSAPP_DRY_RUN", "").lower() in ("true", "1")
+            env_enabled = os.getenv("ENABLE_ANTIBAN_DELAYS", "true").lower() in ("true", "1", "yes")
+            self.enable_antiban_delays = env_enabled and not is_dry
 
     def recover_stale_processing(self, timeout_minutes: int = 15) -> int:
         """
@@ -70,12 +90,20 @@ class QueueWorker:
 
             return len(stale_steps)
 
-    def process_pending_requests(self, max_requests: int = 50) -> dict[str, int]:
+    def process_pending_requests(
+        self,
+        max_requests: int = 50,
+        max_per_account: int | None = None,
+    ) -> dict[str, int]:
         """
         Processa as solicitacoes ativas e suas etapas na ordem sequencial.
+        Limita o envio para no maximo 'max_per_account' contatos por conta por ciclo (padrao: 5).
         Retorna estatisticas de processamento.
         """
         self.recover_stale_processing()
+
+        if max_per_account is None:
+            max_per_account = int(os.getenv("MAX_CONTACTS_PER_ACCOUNT_PER_CYCLE", "5"))
 
         engine = self.db.connectDataBase()
         if isinstance(engine, tuple) and not engine[0]:
@@ -86,26 +114,48 @@ class QueueWorker:
         requests_completed = 0
 
         with engine.begin() as conn:
-            # Busca solicitacoes ativas
+            # Busca solicitacoes ativas particionadas por instancia (ate max_per_account por conta)
             requests = conn.execute(
                 sa.text(f"""
-                    SELECT TOP (:max_req)
-                        S.ID_SOLICITACAO, S.ID_CONTROLE_SHEETS, S.ID_CONTATO, S.INSTANCIA_ENVIO,
-                        C.NOME, C.TELEFONE_NORMALIZADO, C.ATIVO, C.CONSENTIMENTO_STATUS, C.BLOQUEADO
-                    FROM {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP S
-                    JOIN {self.db.dataBase}.{self.db.schema}.CONTATOS_WPP C ON S.ID_CONTATO = C.ID_CONTATO
-                    WHERE S.STATUS_OPERADOR = 'Pendente'
-                      AND S.STATUS_TECNICO IN ('PENDENTE', 'PROCESSANDO')
-                    ORDER BY S.ID_SOLICITACAO ASC
+                    WITH RankedRequests AS (
+                        SELECT 
+                            S.ID_SOLICITACAO, S.ID_CONTROLE_SHEETS, S.ID_CONTATO, S.INSTANCIA_ENVIO,
+                            C.NOME, C.TELEFONE_NORMALIZADO, C.ATIVO, C.CONSENTIMENTO_STATUS, C.BLOQUEADO,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY COALESCE(S.INSTANCIA_ENVIO, 'conta_1') 
+                                ORDER BY S.ID_SOLICITACAO ASC
+                            ) as rn
+                        FROM {self.db.dataBase}.{self.db.schema}.SOLICITACOES_ENVIO_WPP S
+                        JOIN {self.db.dataBase}.{self.db.schema}.CONTATOS_WPP C ON S.ID_CONTATO = C.ID_CONTATO
+                        WHERE S.STATUS_OPERADOR = 'Pendente'
+                          AND S.STATUS_TECNICO IN ('PENDENTE', 'PROCESSANDO')
+                    )
+                    SELECT TOP (:total_max)
+                        ID_SOLICITACAO, ID_CONTROLE_SHEETS, ID_CONTATO, INSTANCIA_ENVIO,
+                        NOME, TELEFONE_NORMALIZADO, ATIVO, CONSENTIMENTO_STATUS, BLOQUEADO
+                    FROM RankedRequests
+                    WHERE rn <= :max_per_acc
+                    ORDER BY rn ASC, INSTANCIA_ENVIO ASC
                 """),
-                {"max_req": max_requests}
+                {
+                    "max_per_acc": max_per_account,
+                    "total_max": max_requests,
+                }
             ).mappings().fetchall()
+
+            processed_contacts_count = 0
+            sent_per_account: dict[str, int] = defaultdict(int)
 
             for req in requests:
                 req_id = req["ID_SOLICITACAO"]
                 ctrl_id = req["ID_CONTROLE_SHEETS"]
                 phone = req["TELEFONE_NORMALIZADO"]
                 nome = req["NOME"]
+                target_instance = req.get("INSTANCIA_ENVIO") or "conta_1"
+
+                # Garante limite estrito de contatos por conta no ciclo
+                if sent_per_account[target_instance] >= max_per_account:
+                    continue
 
                 # Valida elegibilidade do contato
                 eligibility = evaluate_consent_eligibility(req)
@@ -144,8 +194,21 @@ class QueueWorker:
                 if not steps:
                     continue
 
+                has_pending = any(s["STATUS"] == "PENDENTE" for s in steps)
+                if not has_pending:
+                    continue
+
+                # Pausa humanizada entre contatos diferentes (15 a 35 segundos)
+                if processed_contacts_count > 0 and self.enable_antiban_delays:
+                    contact_delay = round(random.uniform(self.inter_contact_delay_min, self.inter_contact_delay_max), 1)
+                    if contact_delay > 0:
+                        print(f"[ANTI-BAN] Aguardando {contact_delay}s antes de enviar para o proximo contato ({mask_phone(phone)})...")
+                        time.sleep(contact_delay)
+
+                processed_contacts_count += 1
                 has_failure = False
                 last_sent_code = None
+                sent_in_this_req = 0
 
                 for step in steps:
                     step_id = step["ID_ETAPA"]
@@ -168,6 +231,13 @@ class QueueWorker:
                         if has_failure:
                             # Se uma etapa anterior falhou, nao executa a proxima
                             break
+
+                        # Pausa humanizada entre mensagens do MESMO contato (3 a 7 segundos)
+                        if sent_in_this_req > 0 and self.enable_antiban_delays:
+                            step_delay = round(random.uniform(self.inter_step_delay_min, self.inter_step_delay_max), 1)
+                            if step_delay > 0:
+                                print(f"[ANTI-BAN] Aguardando {step_delay}s antes do proximo envio para {mask_phone(phone)}...")
+                                time.sleep(step_delay)
 
                         # Marca etapa como PROCESSANDO
                         conn.execute(
@@ -241,6 +311,7 @@ class QueueWorker:
                                 {"id_etapa": step_id}
                             )
                             steps_sent += 1
+                            sent_in_this_req += 1
                             last_sent_code = step_code
                         else:
                             conn.execute(
@@ -254,6 +325,9 @@ class QueueWorker:
                             steps_failed += 1
                             has_failure = True
                             break
+
+                if sent_in_this_req > 0:
+                    sent_per_account[target_instance] += 1
 
                 # Avalia o resultado final da solicitacao
                 updated_steps = conn.execute(

@@ -93,7 +93,26 @@ Os arquivos configurados na coluna `Arquivo` da aba **`Mensagens`** devem ficar 
 
 ---
 
-## 🛠️ 5. Solução de Problemas Comuns (Troubleshooting)
+## 🛡️ 5. Proteções Anti-Banimento Ativas
+
+O robô conta com defesas automáticas contra detecção de tráfego robótico e bloqueio do WhatsApp:
+
+1. **Pausa Humanizada entre Contatos (15 a 35 segundos):**
+   - Ao processar uma fila de leads, o robô aguarda um tempo randômico entre 15s e 35s antes de abordar o próximo número, eliminando disparos em rajada.
+2. **Pausa Humanizada entre Mensagens do Mesmo Contato (3 a 7 segundos):**
+   - Se o lead tiver texto e vídeo/anexo para receber, o robô envia o texto, aguarda de 3s a 7s (tempo de anexar a mídia) e só então envia o arquivo.
+3. **Simulação de "Digitando..." e "Gravando..." (Presence da Evolution API):**
+   - Antes de enviar texto, o robô ativa o status *"composing"* (digitando...) na conversa por 1.5s a 3s (proporcional ao tamanho do texto).
+   - Para áudio/vídeo, ativa *"recording"* ou *"composing"* antes do envio, fazendo com que o WhatsApp e o destinatário vejam uma interação humana em tempo real.
+4. **Limite de Envios por Ciclo (Máximo 5 Contatos por Conta):**
+   - A cada ciclo (a cada 15 min ou ao rodar `--once`), o robô envia para no máximo **5 contatos do Pacífico** (`conta_1`) e **5 contatos da Daniela** (`conta_2`), totalizando no máximo 10 envios por ciclo.
+   - Os demais leads permanecem como `Pendente` na planilha e no banco, sendo atendidos automaticamente nos ciclos seguintes.
+5. **Leitura de Respostas 100% Independente:**
+   - A coleta de respostas dos leads (`Ultima Mensagem Recebida`) roda para **todos os contatos da planilha** em todos os ciclos, sem limite de quantidade e isolada de qualquer falha de envio. Se qualquer lead responder a qualquer momento, sua mensagem é atualizada na planilha imediatamente.
+
+---
+
+## 🛠️ 6. Solução de Problemas Comuns (Troubleshooting)
 
 ### Problema 1: Erro de Timeout no SQL Server `[Provedor de Memória Compartilhada: Erro 258]`
 **Causa:** O serviço do SQL Server no Windows congelou após suspensão ou reinicialização da máquina.  

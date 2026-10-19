@@ -54,6 +54,41 @@ class ChannelsTests(unittest.TestCase):
         res2 = channel.send_text("5531983282759", "Segunda mensagem")
         self.assertTrue(res2.success)
 
+    def test_evolution_channel_send_presence(self):
+        from unittest.mock import patch, MagicMock
+        from channels import EvolutionApiWhatsAppChannel
+
+        channel = EvolutionApiWhatsAppChannel(base_url="http://localhost:8080", api_key="secret", instances=["conta_1"])
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+            success = channel.send_presence("5531983282759", presence="composing", delay_ms=1200, instance="conta_1")
+            self.assertTrue(success)
+            mock_urlopen.assert_called_once()
+            req = mock_urlopen.call_args[0][0]
+            self.assertIn("/chat/sendPresence/conta_1", req.full_url)
+
+    def test_evolution_channel_send_text_triggers_presence(self):
+        from unittest.mock import patch, MagicMock
+        from channels import EvolutionApiWhatsAppChannel
+
+        channel = EvolutionApiWhatsAppChannel(base_url="http://localhost:8080", api_key="secret", instances=["conta_1"], simulate_presence=True)
+
+        with patch.object(channel, "send_presence", return_value=True) as mock_presence, \
+             patch("time.sleep") as mock_sleep, \
+             patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = b'{"status": "ok"}'
+            mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+            res = channel.send_text("5531983282759", "Mensagem de teste anti-ban", instance="conta_1")
+            self.assertTrue(res.success)
+            mock_presence.assert_called_once_with("5531983282759", presence="composing", delay_ms=mock_presence.call_args[1]["delay_ms"], instance="conta_1")
+            mock_sleep.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

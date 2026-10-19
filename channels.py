@@ -254,10 +254,12 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
         base_url: str = "http://localhost:8080",
         api_key: str = "minha_chave_secreta_123",
         instances: list[str] | None = None,
+        simulate_presence: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.instances = instances or ["conta_1", "conta_2"]
+        self.simulate_presence = simulate_presence
         self._current_index = 0
 
     def _get_next_instance(self) -> str:
@@ -267,7 +269,49 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
         self._current_index += 1
         return inst
 
-    def send_text(self, phone: str, text: str, instance: str | None = None) -> ChannelResult:
+    def send_presence(
+        self,
+        phone: str,
+        presence: str = "composing",
+        delay_ms: int = 1500,
+        instance: str | None = None,
+    ) -> bool:
+        """
+        Envia evento de presenca para o WhatsApp (ex: 'composing' para digitando, 'recording' para gravando).
+        Simula interacao humana antes do envio de texto ou midia.
+        """
+        import urllib.request
+        import urllib.error
+        import json
+
+        clean_phone = re.sub(r"\D", "", phone)
+        inst = instance or self._get_next_instance()
+        url = f"{self.base_url}/chat/sendPresence/{inst}"
+        headers = {
+            "apikey": self.api_key,
+            "Content-Type": "application/json",
+        }
+        payload = json.dumps({
+            "number": clean_phone,
+            "presence": presence,
+            "delay": delay_ms,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(url, data=payload, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status in (200, 201)
+        except Exception:
+            return False
+
+    def send_text(
+        self,
+        phone: str,
+        text: str,
+        instance: str | None = None,
+        simulate_presence: bool | None = None,
+        **kwargs: Any,
+    ) -> ChannelResult:
         import urllib.request
         import urllib.error
         import json
@@ -276,6 +320,12 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
         clean_phone = re.sub(r"\D", "", phone)
         masked = mask_phone(clean_phone)
         inst = instance or self._get_next_instance()
+
+        do_presence = self.simulate_presence if simulate_presence is None else simulate_presence
+        if do_presence:
+            typing_ms = min(max(int(len(text) * 40), 1200), 3000)
+            self.send_presence(clean_phone, presence="composing", delay_ms=typing_ms, instance=inst)
+            time.sleep(typing_ms / 1000.0)
 
         url = f"{self.base_url}/message/sendText/{inst}"
         headers = {
@@ -327,6 +377,8 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
         caption: str | None = None,
         is_image: bool = False,
         instance: str | None = None,
+        simulate_presence: bool | None = None,
+        **kwargs: Any,
     ) -> ChannelResult:
         import urllib.request
         import urllib.error
@@ -364,6 +416,13 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
 
         mime_type, _ = mimetypes.guess_type(str(file_path))
         mime_type = mime_type or default_mime
+
+        do_presence = self.simulate_presence if simulate_presence is None else simulate_presence
+        if do_presence:
+            p_type = "recording" if suffix in (".mp3", ".ogg", ".wav", ".m4a") else "composing"
+            media_ms = 2000
+            self.send_presence(clean_phone, presence=p_type, delay_ms=media_ms, instance=inst)
+            time.sleep(media_ms / 1000.0)
 
         with open(file_path, "rb") as f:
             encoded_media = base64.b64encode(f.read()).decode("utf-8")
@@ -436,10 +495,12 @@ def get_channel() -> WhatsAppChannel:
     elif channel_type in ("evolution_api", "evolution"):
         raw_instances = os.getenv("EVOLUTION_INSTANCES", "conta_1,conta_2")
         inst_list = [i.strip() for i in raw_instances.split(",") if i.strip()]
+        sim_presence = os.getenv("ENABLE_PRESENCE", "true").lower() in ("true", "1", "yes")
         return EvolutionApiWhatsAppChannel(
             base_url=os.getenv("EVOLUTION_API_URL", "http://localhost:8080"),
             api_key=os.getenv("EVOLUTION_API_KEY", "minha_chave_secreta_123"),
             instances=inst_list,
+            simulate_presence=sim_presence,
         )
 
     return DesktopWhatsAppChannel()
