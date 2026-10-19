@@ -80,7 +80,20 @@ Define por qual WhatsApp a mensagem será disparada:
 
 ---
 
-## 🛠️ 4. Solução de Problemas Comuns (Troubleshooting)
+## 📁 4. Anexos e Mídias Suportadas (Pasta `anexos/`)
+
+Os arquivos configurados na coluna `Arquivo` da aba **`Mensagens`** devem ficar salvos dentro da pasta `anexos/` do projeto:
+
+- **Vídeos:** `.mp4`, `.mov`, `.avi`, `.mkv` (enviados com player de vídeo integrado no WhatsApp e suporte a legenda).
+- **Imagens:** `.png`, `.jpg`, `.jpeg`, `.webp` (enviadas com visualização em miniatura no chat e legenda).
+- **Áudios:** `.mp3`, `.ogg`, `.m4a`, `.wav` (reproduzíveis no WhatsApp).
+- **Documentos:** `.pdf`, `.docx`, `.doc`, `.xlsx`, `.xls`, `.csv`, `.txt`.
+
+> **Dica:** Na planilha você pode colocar o nome com extensão (ex: `apresentacao.mp4`) ou apenas o nome base se não houver ambiguidade (ex: `apresentacao`).
+
+---
+
+## 🛠️ 5. Solução de Problemas Comuns (Troubleshooting)
 
 ### Problema 1: Erro de Timeout no SQL Server `[Provedor de Memória Compartilhada: Erro 258]`
 **Causa:** O serviço do SQL Server no Windows congelou após suspensão ou reinicialização da máquina.  

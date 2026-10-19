@@ -48,6 +48,20 @@ class FileValidatorTests(unittest.TestCase):
         with self.assertRaises(AttachmentSecurityError):
             resolve_and_validate_attachment("script.exe", base_dir=self.base_path)
 
+    def test_allows_video_mp4(self):
+        (self.base_path / "video_demo.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42 test")
+        res = resolve_and_validate_attachment("video_demo.mp4", base_dir=self.base_path, must_exist=True)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.name, "video_demo.mp4")
+        self.assertEqual(classify_attachment_type(res), 2)
+
+    def test_allows_audio_mp3(self):
+        (self.base_path / "audio_demo.mp3").write_bytes(b"ID3 test")
+        res = resolve_and_validate_attachment("audio_demo.mp3", base_dir=self.base_path, must_exist=True)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.name, "audio_demo.mp3")
+        self.assertEqual(classify_attachment_type(res), 2)
+
     def test_missing_file_raises_when_required(self):
         with self.assertRaises(FileNotFoundError):
             resolve_and_validate_attachment("nao_existe.pdf", base_dir=self.base_path, must_exist=True)

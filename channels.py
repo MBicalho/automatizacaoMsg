@@ -84,7 +84,16 @@ class DryRunWhatsAppChannel(WhatsAppChannel):
         start_time = time.monotonic()
         time.sleep(self.simulated_delay)
         masked = mask_phone(phone)
-        file_type = "imagem" if is_image else "documento"
+        ext = file_path.suffix.lower()
+        if is_image or ext in (".png", ".jpg", ".jpeg", ".webp"):
+            file_type = "imagem"
+        elif ext in (".mp4", ".mov", ".avi", ".mkv"):
+            file_type = "video"
+        elif ext in (".mp3", ".ogg", ".m4a", ".wav"):
+            file_type = "audio"
+        else:
+            file_type = "documento"
+
         inst_label = f"[{instance}] " if instance else ""
         detail = (
             f"[DRY-RUN] {inst_label}Simulacao de envio de {file_type} para {masked}. "
@@ -339,9 +348,22 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
                 duration_seconds=round(time.monotonic() - start_time, 3),
             )
 
+        suffix = file_path.suffix.lower()
+        if is_image or suffix in (".png", ".jpg", ".jpeg", ".webp"):
+            media_type = "image"
+            default_mime = "image/jpeg"
+        elif suffix in (".mp4", ".mov", ".avi", ".mkv"):
+            media_type = "video"
+            default_mime = "video/mp4"
+        elif suffix in (".mp3", ".ogg", ".m4a", ".wav", ".aac"):
+            media_type = "audio"
+            default_mime = "audio/mp4"
+        else:
+            media_type = "document"
+            default_mime = "application/octet-stream"
+
         mime_type, _ = mimetypes.guess_type(str(file_path))
-        mime_type = mime_type or ("image/jpeg" if is_image else "application/octet-stream")
-        media_type = "image" if is_image else "document"
+        mime_type = mime_type or default_mime
 
         with open(file_path, "rb") as f:
             encoded_media = base64.b64encode(f.read()).decode("utf-8")
@@ -362,7 +384,7 @@ class EvolutionApiWhatsAppChannel(WhatsAppChannel):
 
         req = urllib.request.Request(url, data=payload, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 data = json.loads(resp.read().decode())
                 return ChannelResult(
                     success=True,

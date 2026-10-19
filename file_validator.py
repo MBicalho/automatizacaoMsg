@@ -20,9 +20,21 @@ ALLOWED_EXTENSIONS = {
     ".jpg",
     ".jpeg",
     ".webp",
+    # Videos
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".mkv",
+    # Audios
+    ".mp3",
+    ".ogg",
+    ".m4a",
+    ".wav",
 }
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
+AUDIO_EXTENSIONS = {".mp3", ".ogg", ".m4a", ".wav"}
 
 
 class AttachmentSecurityError(ValueError):

@@ -22,6 +22,16 @@ class ChannelsTests(unittest.TestCase):
             self.assertTrue(res.success)
             self.assertEqual(res.status, "SUCESSO")
             self.assertEqual(res.channel_name, "SIMULACAO")
+            self.assertIn("documento", res.detail)
+
+    def test_dry_run_video_simulation(self):
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as f:
+            channel = DryRunWhatsAppChannel(simulated_delay_seconds=0.0)
+            res = channel.send_file("5511987654321", Path(f.name), caption="Video teste", is_image=False)
+            self.assertTrue(res.success)
+            self.assertEqual(res.status, "SUCESSO")
+            self.assertEqual(res.channel_name, "SIMULACAO")
+            self.assertIn("video", res.detail)
 
     def test_factory_defaults_to_dry_run(self):
         with unittest.mock.patch("channels.load_dotenv"), unittest.mock.patch.dict("os.environ", {"WHATSAPP_DRY_RUN": "true"}):
